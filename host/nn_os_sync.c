@@ -686,14 +686,18 @@ HLE(_ZN2nn2os23StartPeriodicTimerEventEPNS0_14TimerEventTypeENS_8TimeSpanES3_) {
     t->period_ns = (int64_t)ARG(2);
     t->signaled = 0;
     ReleaseSRWLockExclusive(&t->lk);
+    WakeAllConditionVariable(&t->cv);   /* (a waiter that came before the start) */
     poke_multiwait();
 }
 HLE(_ZN2nn2os14WaitTimerEventEPNS0_14TimerEventTypeE) {
     Obj *t = obj(ARG(0), K_TIMER);
     AcquireSRWLockExclusive(&t->lk);
+    /* (hookshot) a timer not started yet is not signaled: the wait lasts until it is started, then its time. OoT's
+       rmbl::VibrationThread waits on its timer before sead::MainThread starts it, right after starting the thread: on
+       Windows the thread came up late enough not to see it, and on Linux it came first and this stopped the game */
+    while (!t->due_ns) hos_cv_sleep(&t->cv, &t->lk, INFINITE);
     int64_t due = t->due_ns;
     ReleaseSRWLockExclusive(&t->lk);
-    if (!due) hos_fatal(c, "WaitTimerEvent on a timer that was never started");
     hos_sleep_ns(due - hos_now_ns());
     AcquireSRWLockExclusive(&t->lk);
     if (t->period_ns > 0) {
@@ -1076,6 +1080,7 @@ HLE(_ZN2nn2os22StartOneShotTimerEventEPNS0_14TimerEventTypeENS_8TimeSpanE) {
     t->period_ns = 0;
     t->signaled = 0;
     ReleaseSRWLockExclusive(&t->lk);
+    WakeAllConditionVariable(&t->cv);
     poke_multiwait();
 }
 /* GenerateRandomBytes(void*, size_t) */
