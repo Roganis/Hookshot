@@ -25,7 +25,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PY = [sys.executable, "-I"]
 BUILD_ID = "e0f3ccfa"   # (the version the patches, the hot list and the profile were made from)
-BESIDE = ["hookshot.exe", "hookshot_vk.dll", "SDL2.dll", "wgpu_native.dll"]
+BESIDE = ["hookshot.exe", "hookshot_vk.dll", "SDL2.dll", "wgpu_native.dll",
+          "hookshot", "libhookshot_vk.so"]   # (Linux's: nx2/build.py)
+LINUX = os.name != "nt"
 LANGUAGES = [("en-US", "English (US)"), ("en-GB", "English (UK)"), ("fr", "French (France)"), ("fr-CA", "French (Canada)"), ("de", "German"),
              ("it", "Italian"), ("es", "Spanish (Spain)"), ("es-419", "Spanish (Latin America)"), ("pt-BR", "Portuguese (Brazil)"), ("nl", "Dutch"),
              ("pl", "Polish"), ("ru", "Russian"), ("ja", "Japanese"), ("ko", "Korean"), ("zh-Hans", "Chinese (Simplified)"),
@@ -79,7 +81,7 @@ def check_modules(exefs):
 
 
 def check(a, work):
-    check_windows_sdk()   # (first: said in plain words when the game is chosen, not after it has been read)
+    check_build_tools()   # (first: said in plain words when the game is chosen, not after it has been read)
     if a.nup:
         probe = os.path.join(work, "probe")
         shutil.rmtree(probe, ignore_errors=True)
@@ -169,6 +171,45 @@ def check_windows_sdk():
     fail("The compiler could not run a test build: %s" % why)
 
 
+def check_linux_tools():
+    """(Linux) What the build takes from the system, by its distribution's names where they differ: said now, not 40 minutes in"""
+    missing = []
+    for tool, why in (("clang", "clang"), ("clang++", "clang"), ("ld.lld", "lld"), ("pkg-config", "pkg-config (pkgconf)")):
+        if not shutil.which(tool):
+            missing.append(why)
+    if shutil.which("pkg-config"):
+        for pkg, why in (("sdl2", "SDL2's headers (libsdl2-dev, SDL2-devel, sdl2 or sdl2-compat)"),
+                         ("libavcodec", "FFmpeg's headers (libavcodec-dev, ffmpeg-devel, ffmpeg)"),
+                         ("libswscale", "FFmpeg's libswscale headers"), ("freetype2", "FreeType's headers (libfreetype-dev, freetype2)")):
+            if subprocess.run(["pkg-config", "--exists", pkg]).returncode:
+                missing.append(why)
+    for path, why in ((("vulkan", "vulkan.h"), "the Vulkan headers (libvulkan-dev, vulkan-headers)"),
+                      (("spirv", "unified1", "spirv.hpp"), "the SPIR-V headers (spirv-headers)")):
+        if not any(os.path.isfile(os.path.join(r, *path)) for r in ("/usr/include", "/usr/local/include")):
+            missing.append(why)
+    vma = os.environ.get("VMA_INCLUDE")
+    if not (vma and os.path.isfile(os.path.join(vma, "vk_mem_alloc.h"))) and not os.environ.get("RX_CPM") and \
+            not any(os.path.isfile(os.path.join(r, "vk_mem_alloc.h")) for r in ("/usr/include", "/usr/local/include")):
+        missing.append("VulkanMemoryAllocator's vk_mem_alloc.h (libvulkan-memory-allocator-dev, vulkan-memory-allocator, or "
+                       "VMA_INCLUDE=<the folder that holds it>)")
+    if missing:
+        fail("Install these to build Hookshot, then build again: " + "; ".join(missing) + ".")
+
+
+def check_build_tools():
+    if LINUX:
+        check_linux_tools()
+    else:
+        check_windows_sdk()
+
+
+def default_work():
+    """the builder's own folder for what it makes on the way (Windows: %LOCALAPPDATA%; Linux: $XDG_DATA_HOME, ~/.local/share)"""
+    if LINUX:
+        return os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share"), "HookshotBuilder")
+    return os.path.join(os.environ.get("LOCALAPPDATA", ROOT), "HookshotBuilder")
+
+
 def link_or_copy(src, dst):
     """the romfs by hard links where the disk allows: 26 GB not written twice"""
     files = [os.path.join(d, f) for d, _, fs in os.walk(src) for f in fs]
@@ -190,7 +231,7 @@ def main():
     p.add_argument("--romfs")
     p.add_argument("--exefs")
     p.add_argument("--out")
-    p.add_argument("--work", default=os.path.join(os.environ.get("LOCALAPPDATA", ROOT), "HookshotBuilder"))
+    p.add_argument("--work", default=default_work())
     p.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     p.add_argument("--language", default="en-US", help="the game's language: a code from LANGUAGES, written to language.txt")
     p.add_argument("--check", action="store_true")
@@ -203,7 +244,7 @@ def main():
     out = os.path.abspath(a.out)
     work = os.path.abspath(a.work)
     os.makedirs(out, exist_ok=True)
-    check_windows_sdk()
+    check_build_tools()
     exefs = os.path.join(work, "exefs")
     romfs = os.path.join(out, "romfs")
 

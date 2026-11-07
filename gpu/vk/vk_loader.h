@@ -2,11 +2,18 @@
 // instance and device level. VK_NO_PROTOTYPES is set for the whole DLL (nx2/build.py).
 #pragma once
 
+#ifdef _WIN32
 #define VK_USE_PLATFORM_WIN32_KHR
+#endif
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include <windows.h>   /* (Linux: host/posix/windows.h) */
 #include <vulkan/vulkan.h>
+#ifdef _WIN32
+#define VKX_WIN32_SURFACE(X) X(vkCreateWin32SurfaceKHR)
+#else
+#define VKX_WIN32_SURFACE(X)   /* (Linux: SDL makes the surface, host/display_sdl.c) */
+#endif
 
 #define VKX_GLOBAL(X)                                                                                                 \
     X(vkCreateInstance)                                                                                               \
@@ -26,7 +33,7 @@
     X(vkEnumerateDeviceExtensionProperties)                                                                           \
     X(vkCreateDevice)                                                                                                 \
     X(vkGetDeviceProcAddr)                                                                                            \
-    X(vkCreateWin32SurfaceKHR)                                                                                        \
+    VKX_WIN32_SURFACE(X)                                                                                              \
     X(vkDestroySurfaceKHR)                                                                                            \
     X(vkGetPhysicalDeviceSurfaceSupportKHR)                                                                           \
     X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)                                                                      \

@@ -15,8 +15,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
+#define PATH_SEP 92   /* '\\' */
 #else
+#include <windows.h>   /* (host/posix/windows.h) */
 #include <sys/mman.h>
+#define PATH_SEP '/'
 #endif
 
 #ifdef A64_MEM_ZERO
@@ -112,8 +115,18 @@ static int reserve_guest(void) {
     hos_commit_init();
     return VirtualAlloc((void *)A64_HOST_BASE, GUEST_SPACE, MEM_RESERVE | watch, PAGE_NOACCESS) == (void *)A64_HOST_BASE;
 #else
-    return mmap((void *)A64_HOST_BASE, GUEST_SPACE, PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE | MAP_NORESERVE, -1, 0) == (void *)A64_HOST_BASE;
+    /* (Linux: the whole window read-write at once, without reserving memory for it: the kernel gives a page its memory
+       on first touch, which is what the commit on touch does on Windows. host/posix/win32.c's VirtualQuery answers the
+       window as committed) */
+    if (mmap((void *)A64_HOST_BASE, GUEST_SPACE, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE | MAP_NORESERVE, -1, 0) != (void *)A64_HOST_BASE)
+        return 0;
+    w32_note_window((void *)A64_HOST_BASE, GUEST_SPACE);
+    {   /* crash reports, as on Windows (mkw_glue.c) */
+        void hos_commit_init(void);
+        hos_commit_init();
+    }
+    return 1;
 #endif
 }
 
@@ -169,13 +182,13 @@ int main(int argc, char **argv) {
     if (!image) {   /* (hookshot) started with nothing, as a game is: everything beside the executable (the builder's folder) */
         char dir[MAX_PATH];
         const DWORD len = GetModuleFileNameA(NULL, dir, MAX_PATH);
-        char *slash = len ? strrchr(dir, 92) : NULL;
+        char *slash = len ? strrchr(dir, PATH_SEP) : NULL;
         if (slash) {
             *slash = 0;
             SetCurrentDirectoryA(dir);
-            snprintf(beside_image, MAX_PATH, "%s\\image.bin", dir);
-            snprintf(beside_romfs, MAX_PATH, "%s\\romfs", dir);
-            snprintf(beside_user, MAX_PATH, "%s\\user", dir);
+            snprintf(beside_image, MAX_PATH, "%s%cimage.bin", dir, PATH_SEP);
+            snprintf(beside_romfs, MAX_PATH, "%s%cromfs", dir, PATH_SEP);
+            snprintf(beside_user, MAX_PATH, "%s%cuser", dir, PATH_SEP);
             if (GetFileAttributesA(beside_image) != INVALID_FILE_ATTRIBUTES) {
                 image = beside_image;
                 if (!hos_romfs_dir) hos_romfs_dir = beside_romfs;
@@ -236,7 +249,7 @@ int main(int argc, char **argv) {
             int on = 0;
             char path[MAX_PATH];
             const DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH);
-            char *slash = len ? strrchr(path, 92) : NULL;
+            char *slash = len ? strrchr(path, PATH_SEP) : NULL;
             if (slash) {
                 snprintf(slash + 1, (size_t)(path + MAX_PATH - slash - 1), "hookshot_options.ini");
                 FILE *o = fopen(path, "r");

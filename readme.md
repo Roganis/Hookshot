@@ -9,7 +9,7 @@
   <br>
 </h1>
 
-<h4 align="center">The Legend of Zelda: Ocarina of Time (Nintendo Switch 2) running natively on Windows, with no emulator.
+<h4 align="center">The Legend of Zelda: Ocarina of Time (Nintendo Switch 2) running natively on Windows and Linux, with no emulator.
 </h4>
 
 <p align="center">
@@ -47,7 +47,8 @@ of the game.
 | Stutter when entering new areas | ⚠️ Still happens, mostly the first time |
 | Ultrawide | ⚠️ The 3D keeps its shape, but the HUD is stretched and the picture is softer |
 | Hyrule Field and the rest of the game | ❓ Not tested yet |
-| AMD and Intel cards | ❓ Never tested |
+| AMD and Intel cards | ❓ Barely tested: AMD only on Linux (below) |
+| Linux | ⚠️ New: reaches the title screen at 60 fps on one PC (Ryzen 7 5700X3D, RX 7900 GRE, Mesa RADV); gameplay not tested yet |
 
 ## How to build
 
@@ -96,12 +97,57 @@ To build from the command line you also need:
 - Visual Studio 2022 with .NET 8, only if you want to change the builder itself.
 - The prebuilt tools that go in `third_party/`: `a64emit`, `lld-link`, `zbic` and SDL2.
 
+### On Linux
+
+The same game folder, built and run on Linux: `hookshot` and `libhookshot_vk.so` in place of the `.exe` and `.dll`. The
+window, sound and controllers go through SDL2, the movies through your system's FFmpeg (its dav1d AV1 decoder), and the
+in-game menu's letters through FreeType. There is no Hookshot Builder app on Linux: build from the command line.
+
+What you need, besides the game:
+
+- x86-64 Linux, 16 GB of RAM and about 60 GB free on the disk you build on, as on Windows.
+- A Vulkan 1.3 driver with mesh shaders: Mesa's RADV for AMD, NVIDIA's own driver.
+- clang, lld and pkg-config; the development files of SDL2 (or sdl2-compat), FFmpeg, FreeType, the Vulkan headers and
+  the SPIR-V headers; and VulkanMemoryAllocator's `vk_mem_alloc.h`.
+  - Arch: `sudo pacman -S clang lld pkgconf sdl2-compat ffmpeg freetype2 vulkan-headers spirv-headers`
+  - Debian / Ubuntu: `sudo apt install clang lld pkg-config libsdl2-dev libavcodec-dev libswscale-dev libswresample-dev libfreetype-dev libvulkan-dev spirv-headers libvulkan-memory-allocator-dev`
+
+  Where your distribution has no package for VulkanMemoryAllocator (Arch has none in its own repositories), point
+  `VMA_INCLUDE` at a folder that holds `vk_mem_alloc.h`, from
+  [its repository](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)'s `include` folder.
+- Python 3 with `lz4`, `numpy`, `capstone`, `unicorn` (2.1) and `zstandard`, for example in a virtual environment:
+
+```bash
+python3 -m venv ~/.local/share/HookshotBuilder/venv
+```
+
+```bash
+~/.local/share/HookshotBuilder/venv/bin/pip install lz4 numpy capstone "unicorn>=2.1,<2.2" zstandard
+```
+
+Then build, with that Python:
+
+```bash
+~/.local/share/HookshotBuilder/venv/bin/python -I nx2/make_game.py --nup ~/your-game.nup --out ~/Games/Hookshot --language en-US
+```
+
+`--romfs` and `--exefs` work as on Windows, and `--work <folder>` moves the build's own files (about 30 GB on the way)
+from `~/.local/share/HookshotBuilder` to a disk with room. Start the game with `~/Games/Hookshot/hookshot`. The first
+start prepares every shader before the window opens, with its progress in the terminal when there is one.
+
+On Linux:
+
+- Keys are read by their place on the keyboard, so the controls are the same keys on any layout (ZQSD on AZERTY).
+- The Ultrawide row's "Monitor's shape" uses the main screen's shape; `HOS_ASPECT=<ratio>` sets it by hand.
+- There is no WebGPU renderer: if Vulkan does not start, the window stays black (the log says why).
+- The developer tools that sample threads (`HOS_PROFILE` with `HOS_SAMPLE`, `HOS_WATCH`) are Windows-only.
+
 ### What this does on your PC
 
 - The build reads your game and never changes it. It writes to the folder you choose and to
   `%LOCALAPPDATA%\HookshotBuilder`.
 - The romfs is hard-linked instead of copied where the disk allows it.
-- To uninstall, delete the game folder and `%LOCALAPPDATA%\HookshotBuilder`.
+- To uninstall, delete the game folder and `%LOCALAPPDATA%\HookshotBuilder` (on Linux, `~/.local/share/HookshotBuilder`).
 
 ### If something goes wrong
 
@@ -156,8 +202,8 @@ game than anyone has yet.
 
 Bigger ways to help:
 
-- **Linux support.** Hookshot only runs on Windows today. The Vulkan renderer is a good start, but the system layer
-  still needs porting.
+- **Linux testing.** The Linux build is new and has only reached the title screen on one AMD card. Playing further on
+  Linux, and on NVIDIA's Linux driver, helps a lot.
 - **Fixes in your own fork.** Fork the project, fix what you find and send the change back. Keep game files, keys and
   anything generated from your game out of it.
 

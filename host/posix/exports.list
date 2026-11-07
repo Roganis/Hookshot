@@ -1,0 +1,4 @@
+/* (hookshot, Linux) what the executable exports for libhookshot_vk.so: host/posix's Win32 (nx2/build.py) */
+{
+    w32_*;
+};

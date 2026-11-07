@@ -182,7 +182,9 @@ HLE(_ZN2nn5codec26ReadDecoderOutputImageNv12EPKNS0_25VideoDecoderImagePoolTypeEj
 static void dec_init_sized(Ctx *c, enum AVCodecID id, const char *what, int w, int h);
 static void dec_init(Ctx *c, enum AVCodecID id, const char *what) { dec_init_sized(c, id, what, 0, 0); }
 static void dec_init_sized(Ctx *c, enum AVCodecID id, const char *what, int w, int h) {
-    const AVCodec *codec = avcodec_find_decoder(id);
+    /* (AV1: libdav1d by name where FFmpeg has it, as Linux's do; FFmpeg's own AV1 decoder needs a hardware context) */
+    const AVCodec *codec = id == AV_CODEC_ID_AV1 ? avcodec_find_decoder_by_name("libdav1d") : NULL;
+    if (!codec) codec = avcodec_find_decoder(id);
     Dec *d = (Dec *)calloc(1, sizeof *d);
     InitializeSRWLock(&d->lock);
     if (codec) {

@@ -8,6 +8,24 @@
    The API is synchronous and single-stream: mf_av1_decode takes one temporal unit (or NULL at the end, which
    drains) and calls back once per picture. A hardware MFT is asynchronous; one is used only if no synchronous
    decoder exists (HOS_AV1_ASYNC=1 to prefer it: untested). HOS_VIDEO_LOG=1 logs the decoder chosen. */
+#ifndef _WIN32
+/* (Linux: no Media Foundation. FFmpeg decodes AV1 there, with libdav1d: host/nn_video.c asks for it first, and these
+   are never reached with a decoder in hand) */
+#include "hos.h"
+#include <stddef.h>
+typedef void (*mf_av1_picture_fn)(void *user, const uint8_t *y, const uint8_t *uv, int w, int h, int stride, int64_t pts);
+void *mf_av1_open(int w, int h) {
+    (void)w, (void)h;
+    static int told;
+    if (!told++) hos_log("video: this FFmpeg has no AV1 decoder (libdav1d): movies will not show");
+    return NULL;
+}
+void mf_av1_decode(void *h, const uint8_t *data, size_t n, int64_t pts, mf_av1_picture_fn fn, void *user) {
+    (void)h, (void)data, (void)n, (void)pts, (void)fn, (void)user;
+}
+void mf_av1_flush(void *h) { (void)h; }
+void mf_av1_close(void *h) { (void)h; }
+#else
 #define COBJMACROS
 #include "hos.h"
 #include <windows.h>
@@ -247,3 +265,4 @@ void mf_av1_close(void *h) {
     IMFTransform_Release(m->mft);
     free(m);
 }
+#endif

@@ -726,6 +726,7 @@ void memory_drop_shadow(uint64_t guest, uint64_t size) {
 /// -fasync-exceptions clang catches a fault in a __try block only across a call, and a 4 KB memcpy inlined into the
 /// block (the per-page retry) faulted past the handler: the crash that kept the texture storage out of the capture.
 void* (*volatile guarded_memcpy)(void*, const void*, size_t) = std::memcpy;
+#ifdef _WIN32
 __declspec(noinline) bool guarded_copy(void* dst, const void* src, size_t n) {
     __try {
         guarded_memcpy(dst, src, n);
@@ -734,6 +735,14 @@ __declspec(noinline) bool guarded_copy(void* dst, const void* src, size_t n) {
     }
     return true;
 }
+#else
+// (Linux: the fault a signal, which host/posix/win32.c brings back here; w32_guarded runs the copy under that guard)
+struct GuardedCopy { void* dst; const void* src; size_t n; };
+__attribute__((noinline)) bool guarded_copy(void* dst, const void* src, size_t n) {
+    GuardedCopy a{dst, src, n};
+    return w32_guarded([](void* p) { auto* g = (GuardedCopy*)p; guarded_memcpy(g->dst, g->src, g->n); }, &a, 1);
+}
+#endif
 // ---- a capture's copies: on the submitting thread and two helpers (RX_VK_CAPTURE_THREADS=<n>, 0-4): ~9 MB of the
 // game's dynamic data a submit, four submits a frame, ~1.4 ms on the game's thread each with one ----
 // (a page written and then unmapped before the submit faulted a plain copy: ReadProcessMemory fails on it instead.
@@ -1190,7 +1199,7 @@ uint64_t mirror_budget() {
         uint64_t vram = 0;
         for (uint32_t h = 0; h < dev.memory.memoryHeapCount; h++)
             if (dev.memory.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) vram = std::max(vram, (uint64_t)dev.memory.memoryHeaps[h].size);
-        return vram ? std::min<uint64_t>(vram / 4, 3072ull << 20) : 3072ull << 20;
+        return vram ? std::min<uint64_t>(vram / 4, 3072ull << 20) : (uint64_t)(3072ull << 20);
     }();
     return b;
 }

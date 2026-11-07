@@ -54,6 +54,7 @@ def load(img_dir):
 
 
 def save(img_dir, starts):
+    os.makedirs(img_dir, exist_ok=True)   # (a fresh work folder: the command-line build has no image/ yet)
     with open(os.path.join(img_dir, FILE), "w") as f:
         f.write("# first guest address of each lifted C chunk after the first (nx2/chunks.py)\n")
         f.write("".join("%08x\n" % s for s in sorted(starts)))

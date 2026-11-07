@@ -12,6 +12,9 @@
 
 #include "vk_api.h"
 #include "vk_internal.h"
+#ifndef _WIN32
+#include "native_window.h"   /* (host/posix: what rx_start is given on Linux) */
+#endif
 
 namespace vkx {
 #define VKX_DEFINE(f) PFN_##f f;
@@ -84,13 +87,29 @@ bool create_instance() {
         logf("vk: the Vulkan loader is %u.%u: 1.3 is needed", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version));
         return false;
     }
+#ifdef _WIN32
     const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    const uint32_t nexts = 2;
+#else
+    // (Linux: the window is not made yet, and SDL may put it on X11 or Wayland: every window system's surface the loader
+    // has, so the one SDL picks can be made later)
+    const char* exts[5];
+    uint32_t nexts = 0;
+    {
+        uint32_t n = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+        std::vector<VkExtensionProperties> all(n);
+        vkEnumerateInstanceExtensionProperties(nullptr, &n, all.data());
+        for (const char* want : {"VK_KHR_surface", "VK_KHR_xlib_surface", "VK_KHR_xcb_surface", "VK_KHR_wayland_surface"})
+            if (has_extension(all, want)) exts[nexts++] = want;
+    }
+#endif
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "mkw-recomp";
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
-    ci.enabledExtensionCount = 2;
+    ci.enabledExtensionCount = nexts;
     ci.ppEnabledExtensionNames = exts;
     // RX_VK_VALIDATION=1: the Khronos validation layer (when installed)
     const char* layer = "VK_LAYER_KHRONOS_validation";
@@ -357,6 +376,17 @@ bool started_up() {
     if (precompile_wanted()) {   // (a release build, before the game: nothing to build during play)
         // (a console while it lasts: there is no window yet, and a long wait with nothing on screen looks like a hang)
         static HANDLE console = nullptr;
+#ifndef _WIN32
+        // (Linux: the terminal the game was started from, if any)
+        const auto progress = [](size_t done, size_t total) {
+            if (!total) return;
+            static size_t shown = (size_t)-1;
+            if (done * 100 / total == shown && done != total) return;
+            shown = done * 100 / total;
+            fprintf(stderr, "%cPreparing shaders: %zu of %zu (%zu%%)   %s", 13, done, total, shown, done == total ? "\n" : "");
+            fflush(stderr);
+        };
+#else
         const auto progress = [](size_t done, size_t total) {
             static bool tried = false;
             if (!total) return;
@@ -374,9 +404,12 @@ bool started_up() {
             DWORD wrote = 0;
             WriteFile(console, line, (DWORD)n, &wrote, nullptr);
         };
+#endif
         prepare_run(progress);
         precompile_run(progress);
+#ifdef _WIN32
         if (console) CloseHandle(console), console = nullptr, FreeConsole();
+#endif
     }
     return true;
 }
@@ -389,10 +422,22 @@ int start(void* hwnd) {
         logf("vk: no window: presents render offscreen (%ux%u)", dev.swap_extent.width, dev.swap_extent.height);
         return started_up() ? 1 : 0;
     }
+#ifdef _WIN32
     VkWin32SurfaceCreateInfoKHR si{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
     si.hinstance = GetModuleHandleA(nullptr);
     si.hwnd = (HWND)hwnd;
     if (vkCreateWin32SurfaceKHR(dev.instance, &si, nullptr, &dev.surface) != VK_SUCCESS) return 0;
+#else
+    {
+        const auto* w = (const HookshotNativeWindow*)hwnd;
+        uint64_t s = 0;
+        if (w->magic != HOOKSHOT_NATIVE_WINDOW_MAGIC || !w->create_surface(w->sdl_window, (uint64_t)(uintptr_t)dev.instance, &s)) {
+            logf("vk: no surface for the window");
+            return 0;
+        }
+        dev.surface = (VkSurfaceKHR)s;
+    }
+#endif
     VkBool32 ok = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(dev.physical, dev.queue_family, dev.surface, &ok);
     if (!ok) return 0;
@@ -420,12 +465,12 @@ MkwVkRenderer table;
 } // namespace
 } // namespace mkwvk
 
-extern "C" __declspec(dllexport) const MkwVkRenderer* mkwvk_init(const MkwVkHost* h) {
+extern "C" MKWVK_EXPORT const MkwVkRenderer* mkwvk_init(const MkwVkHost* h) {
     using namespace mkwvk;
     if (!h || h->version != MKWVK_API_VERSION) return nullptr;
     host = h;
     if (!load_global()) {
-        logf("vk: vulkan-1.dll not found");
+        logf("vk: the Vulkan loader (vulkan-1.dll, libvulkan.so.1) not found");
         return nullptr;
     }
     if (!create_instance() || !pick_device() || !create_device()) return nullptr;

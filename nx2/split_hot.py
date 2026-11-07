@@ -23,6 +23,9 @@ def split(gen, pieces):
         os.replace(path, whole)
     for old in glob.glob(os.path.join(gen, "code_hot_*.c")):
         os.remove(old)
+    if not os.path.exists(whole):   # (a lift without a hot list, A64_HOT_FUNCS: no hot file to split)
+        print("split_hot: no code_hot.c in %s: nothing to split" % gen)
+        return
     with open(whole, encoding="utf-8", newline="") as f:
         text = f.read()
     marks = list(HEAD.finditer(text))

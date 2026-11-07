@@ -13,6 +13,9 @@ static SRWLOCK lock = SRWLOCK_INIT;
 #else
 #include <pthread.h>
 #include <sys/mman.h>
+#if !defined(__EMSCRIPTEN__)
+#include <windows.h>   /* (host/posix/windows.h: VirtualFree) */
+#endif
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 #define LOCK() pthread_mutex_lock(&lock)
 #define UNLOCK() pthread_mutex_unlock(&lock)

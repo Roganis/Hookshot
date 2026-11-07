@@ -76,6 +76,12 @@ static int load(void) {
     if (!m) return 0;
 #define GET(field, name) if (!(*(FARPROC *)&sdl.field = GetProcAddress(m, name))) return 0
     GET(Init, "SDL_Init");
+#ifndef _WIN32
+    {   /* (Linux: the same SDL as the window's and the sound's, started one subsystem at a time: display_sdl.c) */
+        int hos_sdl_init(uint32_t flags);
+        sdl.Init = hos_sdl_init;
+    }
+#endif
     GET(SetHint, "SDL_SetHint");
     GET(NumJoysticks, "SDL_NumJoysticks");
     GET(IsGameController, "SDL_IsGameController");

@@ -19,7 +19,12 @@
 #include <string.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#ifdef _WIN32
 #include <mmsystem.h>
+#else
+#include <SDL2/SDL.h>   /* (Linux: the output is an SDL audio queue) */
+int hos_sdl_init(uint32_t flags);   /* display_sdl.c */
+#endif
 
 void hos_system_event_init(uint64_t key, int autoclear);
 void hos_system_event_signal(uint64_t key);
@@ -563,6 +568,7 @@ static void render_frame(int16_t *pcm) {   /* 240 stereo frames */
     }
 }
 
+#ifdef _WIN32
 /* ---- output: waveOut, 10 ms blocks; a WAV file with HOS_AUDIO_DUMP ---------------------------------------------- */
 #define NBLOCKS 10
 static HWAVEOUT wout;
@@ -597,6 +603,41 @@ static void output_open(void) {
         hdr[i].dwFlags = WHDR_DONE;
     }
 }
+#else
+/* ---- output: an SDL audio queue (Linux), 10 ms at a time; a WAV file with HOS_AUDIO_DUMP ------------------------- */
+static SDL_AudioDeviceID wout;
+static int16_t pending[FRAME * 2 * 2];
+static int fill_frames;
+static FILE *dump;
+static uint32_t dump_bytes;
+
+static void output_open(void) {
+    const char *d = getenv("HOS_AUDIO_DUMP");
+    if (d && (dump = fopen(d, "wb")) != NULL) {
+        static const uint8_t z[44];
+        fwrite(z, 1, 44, dump);
+    }
+    if (getenv("HOS_AUDIO") && atoi(getenv("HOS_AUDIO")) == 0) return;
+    if (hos_sdl_init(SDL_INIT_AUDIO)) {
+        hos_log("audio: SDL has no sound: %s", SDL_GetError());
+        return;
+    }
+    SDL_AudioSpec want, got;
+    memset(&want, 0, sizeof want);
+    want.freq = RATE;
+    want.format = AUDIO_S16SYS;
+    want.channels = 2;
+    want.samples = FRAME * 2;
+    want.callback = NULL;   /* (queued: the mixer thread pushes) */
+    wout = SDL_OpenAudioDevice(NULL, 0, &want, &got, 0);
+    if (!wout) {
+        hos_log("audio: no output device: %s", SDL_GetError());
+        return;
+    }
+    hos_log("audio: %s through SDL (%s)", SDL_GetCurrentAudioDriver(), got.freq == RATE ? "48 kHz" : "resampled");
+    SDL_PauseAudioDevice(wout, 0);
+}
+#endif
 static void dump_finish(void) {
     if (!dump) return;
     uint8_t h[44];
@@ -629,6 +670,7 @@ static void output_frame(const int16_t *pcm) {
             fseek(dump, at, SEEK_SET);
         }
     }
+#ifdef _WIN32
     if (!wout) return;
     WAVEHDR *h = &hdr[fill_block];
     if (fill_frames == 0) {
@@ -645,6 +687,17 @@ static void output_frame(const int16_t *pcm) {
     }
 }
 
+#else
+    if (!wout) return;
+    memcpy(pending + fill_frames * FRAME * 2, pcm, FRAME * 4);
+    if (++fill_frames == 2) {
+        fill_frames = 0;
+        /* (no more than ~100 ms queued, as waveOut's ten blocks: a device that is behind drops, it does not lag) */
+        if (SDL_GetQueuedAudioSize(wout) <= (Uint32)(RATE / 10 * 4)) SDL_QueueAudio(wout, pending, sizeof pending);
+    }
+}
+
+#endif
 /* ---- parameter updates ------------------------------------------------------------------------------------------
    The game changes a voice's play state, wave buffers, volumes, filters and destination (and its mixes' and
    splitters') with separate calls, then commits them together with RequestUpdateAudioRenderer; the console's renderer

@@ -18,6 +18,10 @@
 #include <stdatomic.h>
 #include <unistd.h>
 #endif
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#include <errno.h>
+#include <time.h>
+#endif
 
 struct HosThread {
     Ctx ctx;
@@ -645,6 +649,19 @@ static void sleep_ns(int64_t ns) {
             if (!SwitchToThread()) YieldProcessor();
         return;
     }
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    {   /* (Linux: an absolute sleep on the clock hos_now_ns reads wakes within ~50 us (the timer slack): to that before
+           the time, the rest yielded, as the waitable timer does on Windows) */
+        (void)timer, (void)tried;
+        const int64_t wake = until - 80000;
+        if (wake > hos_now_ns()) {
+            struct timespec ts = {(time_t)(wake / 1000000000LL), (long)(wake % 1000000000LL)};
+            while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) == EINTR) {}
+        }
+        while (hos_now_ns() < until) sched_yield();
+        return;
+    }
+#endif
     if (!tried) {
         tried = 1;
         timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);

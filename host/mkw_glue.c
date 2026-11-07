@@ -52,6 +52,7 @@ static LONG WINAPI report_crash(EXCEPTION_POINTERS *info) {
                            (LPCSTR)rip, &mod))
         GetModuleFileNameA(mod, name, MAX_PATH);
     const char *base = strrchr(name, '\\');
+    if (!base) base = strrchr(name, '/');
     const uint64_t addr = rec->NumberParameters > 1 ? rec->ExceptionInformation[1] : 0;
     hos_log("CRASH: exception %#lx (%s %#llx, guest %#llx) at %s+%#llx", rec->ExceptionCode,
             rec->NumberParameters > 1 && rec->ExceptionInformation[0] == 1 ? "write" : "read",
@@ -76,6 +77,20 @@ static LONG WINAPI report_crash(EXCEPTION_POINTERS *info) {
             DWORD64 frame;
             RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, ctx.Rip, f, &ctx, &handler_data, &frame, NULL);
         }
+#ifndef _WIN32
+        {   /* (Linux: no unwind tables to walk by hand; the frames through the signal's, from the handler) */
+            void *frames[48];
+            const WORD got = RtlCaptureStackBackTrace(0, 48, frames, NULL);
+            n += snprintf(hb + n, sizeof hb - n, " | from the handler:");
+            for (WORD i = 0; i < got && n < (int)sizeof hb - 48; i++) {
+                HMODULE m = NULL;
+                char mn[MAX_PATH] = "?";
+                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCSTR)frames[i], &m)) GetModuleFileNameA(m, mn, MAX_PATH);
+                const char *mb = strrchr(mn, '/');
+                n += snprintf(hb + n, sizeof hb - n, " %s+%#llx", mb ? mb + 1 : mn, (unsigned long long)((uint64_t)frames[i] - (uint64_t)m));
+            }
+        }
+#endif
         hos_log("%s", hb);
     }
     Ctx *c = hos_ctx();

@@ -189,6 +189,7 @@ static const MkwVkRenderer *load_vulkan(const char *dll) {
     char path[MAX_PATH];
     const DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
     char *slash = n ? strrchr(path, '\\') : NULL;
+    if (!slash && n) slash = strrchr(path, '/');   /* (Linux) */
     if (!slash) return NULL;
     strcpy(slash + 1, dll);
     HMODULE m = LoadLibraryA(path);

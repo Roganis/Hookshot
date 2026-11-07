@@ -415,18 +415,33 @@ bool depth_aspect(VkFormat f) {
 
 // (hookshot) A driver's compiler that faults on a shader (amdvlk64.dll on a mesh program, Hookshot issue 26) costs that one draw, not the game
 __declspec(noinline) VkResult guarded_graphics(VkPipelineCache cache, const VkGraphicsPipelineCreateInfo* ci, VkPipeline* pl) {
+#ifdef _WIN32
     __try {
         return vkCreateGraphicsPipelines(dev.device, cache, 1, ci, nullptr, pl);
     } __except (1) {
         return VK_ERROR_UNKNOWN;
     }
+#else
+    // (Linux: any fault in the driver comes back here as a signal, host/posix/win32.c)
+    struct A { VkPipelineCache cache; const VkGraphicsPipelineCreateInfo* ci; VkPipeline* pl; VkResult r; } a{cache, ci, pl, VK_ERROR_UNKNOWN};
+    if (!w32_guarded([](void* p) { auto* x = (A*)p; x->r = vkCreateGraphicsPipelines(dev.device, x->cache, 1, x->ci, nullptr, x->pl); }, &a, 0))
+        return VK_ERROR_UNKNOWN;
+    return a.r;
+#endif
 }
 __declspec(noinline) VkResult guarded_compute(VkPipelineCache cache, const VkComputePipelineCreateInfo* ci, VkPipeline* pl) {
+#ifdef _WIN32
     __try {
         return vkCreateComputePipelines(dev.device, cache, 1, ci, nullptr, pl);
     } __except (1) {
         return (VkResult)-77;   // (a fault in the driver, told apart from what it returns)
     }
+#else
+    struct A { VkPipelineCache cache; const VkComputePipelineCreateInfo* ci; VkPipeline* pl; VkResult r; } a{cache, ci, pl, VK_ERROR_UNKNOWN};
+    if (!w32_guarded([](void* p) { auto* x = (A*)p; x->r = vkCreateComputePipelines(dev.device, x->cache, 1, x->ci, nullptr, x->pl); }, &a, 0))
+        return (VkResult)-77;
+    return a.r;
+#endif
 }
 VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at, VkPrimitiveTopology topo, int part = -1);
 

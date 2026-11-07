@@ -31,6 +31,7 @@ Run everything with `python -I` from this folder.
 | `python -I nx2/test_leaf.py [--count 3000 --states 4] [--calls]` | random whole functions (or call trees), Unicorn vs recompiled native code on the real image |
 | `python -I nx2/lift.py --standalone --write` then `python -I nx2/build.py --standalone --jobs 4` | the standalone game: `work/sa/build/hookshot.exe` + `hookshot_vk.dll` |
 | `powershell -File scripts/run-vk.ps1 [-Window] [-Seconds 120] [-Name x]` | a muted test run on Vulkan, with screenshots in `work/runs/<name>/shots` |
+| Linux: `RX_BACKEND=vulkan HOS_HEADLESS=1 HOS_AUDIO=0 RX_VK_SHOTS=<dir> work/sa/build/hookshot work/sa/image/image.bin --romfs <romfs> --user work/sa/user` | the same test run by hand (`HOS_HEADLESS` left out: in a window) |
 | `python -I scripts/prof.py <stacks file>` | a profile sampled with `HOS_SAMPLE=<thread>` + `HOS_SAMPLE_FILE=<stacks file>`, named from the linker maps |
 
 The dump can also come from `OOT_DUMP` (its folder) or `OOT_EXEFS`; `OOT_WORK` moves the work folder.
@@ -42,6 +43,7 @@ The dump can also come from `OOT_DUMP` (its folder) or `OOT_EXEFS`; `OOT_WORK` m
 | `DESIGN.md` | why mkw-recomp's pipeline, the architecture, MKW's lessons as rules, stages, testing |
 | `nx2/` | the lift pipeline and its tests (mkw-recomp's, made game-neutral; `kit.py` has the paths) |
 | `host/` | the standalone Horizon runtime (TOTKPort's `hos/` as adapted by mkw-recomp), with the native NVN2 layer `nvn_native.c` |
+| `host/posix/` | (Linux) the Win32 the runtime and `gpu/vk/` call, on POSIX: its `windows.h` answers their `#include <windows.h>`; with `host/display_sdl.c` (the SDL2 window) |
 | `gpu/vk/` | the Vulkan back end (`hookshot_vk.dll`), with Eden's shader recompiler and sirit |
 | `gpu/render/`, `gpu/third_party/` | the WebGPU renderer the exe falls back to, its op stream (`rx_nvn.h`), suyu's decoders |
 | `scripts/` | test runs and the profile reader |
